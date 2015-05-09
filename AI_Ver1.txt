@@ -1,0 +1,329 @@
+using UnityEngine;
+using System.Collections;
+using System.Collections.Generic;
+
+public class SharkAIScript : MonoBehaviour
+{
+    public Rigidbody shark;
+    public Transform patrolArea;
+    public Transform indicator;
+    public Transform player;
+    private PlayerScript playerScript;
+
+    //shark
+    private Vector3 currentTargetPosition;
+    private float distanceToTargetPosition = 15f;
+    public float maxSharkSpeed;
+    private float currentSharkSpeed;
+    private float standartTurnValue = 2f;
+    private float correctedTurnValue = 0.5f;
+    private bool playerSpotted = false;
+
+    private Vector3 currentDirection;
+    private bool directionChanged;
+    private float sharkLength;
+
+    //raycasts
+    private float rayCastLength;
+
+    // Use this for initialization
+    void Start()
+    {
+        currentSharkSpeed = maxSharkSpeed / 2;
+        sharkLength = GetComponent<MeshFilter>().mesh.bounds.extents.z;
+        rayCastLength = sharkLength * 3;
+        playerScript = FindObjectOfType<PlayerScript>();
+        GetTargetPosition();
+    }
+
+    void FixedUpdate()
+    {
+
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        PlayerDetection();
+        ObstacleAvoidance();
+        GetDirection(currentDirection, directionChanged);
+        Move();
+    }
+
+    void Move()
+    {
+        shark.velocity = shark.transform.forward * currentSharkSpeed;
+    }
+
+    void GetDirection(Vector3 direction, bool directionChanged)
+    {
+        Vector3 vectorToTarget = currentTargetPosition - shark.transform.position;
+
+        //create the rotation we need to be in to look at the target
+        Quaternion lookRotation = Quaternion.LookRotation(direction);
+
+        //rotate us over time according to speed until we are in the required rotation
+        if (directionChanged)
+            shark.transform.rotation = Quaternion.Slerp(shark.transform.rotation, lookRotation, Time.deltaTime * correctedTurnValue);
+        else if (!playerSpotted)
+            shark.transform.rotation = Quaternion.Slerp(shark.transform.rotation, lookRotation, Time.deltaTime * Random.Range(standartTurnValue / 2, standartTurnValue));
+        else
+            shark.transform.rotation = Quaternion.Slerp(shark.transform.rotation, lookRotation, Time.deltaTime * standartTurnValue * 2f);
+
+        if (vectorToTarget.magnitude <= distanceToTargetPosition)
+        {
+            GetTargetPosition();
+        }
+    }
+
+    void GetTargetPosition()
+    {
+        Vector3 rndPosWithinPatrolArea = new Vector3(Random.Range(-1f, 1f), Random.Range(-1f, 1f), Random.Range(-1f, 1f));
+        rndPosWithinPatrolArea = patrolArea.TransformPoint(rndPosWithinPatrolArea * 0.5f);
+        Vector3 deltaVec = rndPosWithinPatrolArea - shark.transform.position;
+
+        if (deltaVec.magnitude > 50)
+        {
+            currentTargetPosition = rndPosWithinPatrolArea;
+            indicator.position = currentTargetPosition;
+        }
+        else
+        {
+            GetTargetPosition();
+        }
+    }
+
+    void ObstacleAvoidance()
+    {
+        directionChanged = false;
+
+        Vector3 playerDirection = player.transform.position - shark.transform.position;
+        Vector3 targetPointDirection = currentTargetPosition - shark.transform.position;
+        Vector3 correctedDirection = targetPointDirection;
+
+        if (playerSpotted && playerDirection.magnitude < 30f)
+        {
+            currentDirection = playerDirection;
+            if (currentSharkSpeed < maxSharkSpeed)
+                currentSharkSpeed += 0.1f;
+            directionChanged = false;
+            return;
+        }
+        else if (playerSpotted)
+        {
+            correctedDirection = playerDirection;
+            if (currentSharkSpeed < maxSharkSpeed)
+                currentSharkSpeed += 0.1f;
+        }
+
+        Vector3 pos = shark.transform.position;
+        Vector3 FRpos = pos + shark.transform.right;
+        Vector3 FLpos = pos - shark.transform.right;
+
+        RaycastHit Fhit;
+        RaycastHit FRhit;
+        RaycastHit FLhit;
+
+        RaycastHit Uhit;
+        RaycastHit Dhit;
+        RaycastHit Rhit;
+        RaycastHit Lhit;
+
+        Vector3 Right = Quaternion.AngleAxis(30f, shark.transform.up) * shark.transform.forward;
+        Vector3 Left = Quaternion.AngleAxis(-30f, shark.transform.up) * shark.transform.forward;
+        Vector3 Up = Quaternion.AngleAxis(30f, -shark.transform.right) * shark.transform.forward;
+        Vector3 Down = Quaternion.AngleAxis(-30f, -shark.transform.right) * shark.transform.forward;
+
+        float Fdistance = 9000f;
+        float FRdistance = 9000f;
+        float FLdistance = 9000f;
+        float Udistance = 9000f;
+        float Ddistance = 9000f;
+        float Rdistance = 9000f;
+        float Ldistance = 9000f;
+
+        //Raycast Forward
+        bool RCforward = Physics.Raycast(pos, shark.transform.forward, out Fhit, rayCastLength * 2);
+        //Raycast Forward Right
+        bool RCforwardRight = Physics.Raycast(FRpos, shark.transform.forward, out FRhit, rayCastLength * 2);
+        //Raycast Forward Left
+        bool RCforwardLeft = Physics.Raycast(FLpos, shark.transform.forward, out FLhit, rayCastLength * 2);
+
+        //Raycast Up
+        bool RCup = Physics.Raycast(pos, Up, out Uhit, rayCastLength);
+        //Raycast Down
+        bool RCdown = Physics.Raycast(pos, Down, out Dhit, rayCastLength);
+        //Raycast Right
+        bool RCright = Physics.Raycast(pos, Right, out Rhit, rayCastLength);
+        //Raycast Left
+        bool RCleft = Physics.Raycast(pos, Left, out Lhit, rayCastLength);
+
+        //Display raycasts + check distances 
+        if (RCforward)
+        {
+            Vector3 FVec = Fhit.point - pos;
+            Fdistance = FVec.magnitude;
+            Debug.DrawLine(pos, Fhit.point, Color.blue);
+        }
+        if (RCforwardRight)
+        {
+            Vector3 FVec = FRhit.point - FRpos;
+            FRdistance = FVec.magnitude;
+            Debug.DrawLine(FRpos, FRhit.point, Color.blue);
+        }
+        if (RCforwardLeft)
+        {
+            Vector3 FVec = FLhit.point - FLpos;
+            FLdistance = FVec.magnitude;
+            Debug.DrawLine(FLpos, FLhit.point, Color.blue);
+        }
+        if (RCup)
+        {
+            Vector3 UVec = Uhit.point - pos;
+            Udistance = UVec.magnitude;
+            Debug.DrawLine(pos, Uhit.point, Color.blue);
+        }
+        if (RCdown)
+        {
+            Vector3 DVec = Dhit.point - pos;
+            Ddistance = DVec.magnitude;
+            Debug.DrawLine(pos, Dhit.point, Color.blue);
+        }
+        if (RCright)
+        {
+            Vector3 RVec = Rhit.point - pos;
+            Rdistance = RVec.magnitude;
+            Debug.DrawLine(pos, Rhit.point, Color.blue);
+        }
+        if (RCleft)
+        {
+            Vector3 LVec = Lhit.point - pos;
+            Ldistance = LVec.magnitude;
+            Debug.DrawLine(pos, Lhit.point, Color.blue);
+        }
+
+        bool alert = false;
+
+        //Resolving Forward
+        if (RCforward || RCforwardRight || RCforwardLeft)
+        {
+            if (correctedDirection == targetPointDirection)
+                correctedDirection = shark.transform.forward;
+
+            if (Fdistance < FRdistance && Fdistance < FLdistance)
+                correctedDirection += Fhit.normal * (rayCastLength / Fdistance);
+            else if (FRdistance < FLdistance)
+                correctedDirection += FRhit.normal * (rayCastLength / FRdistance);
+            else
+                correctedDirection += FLhit.normal * (rayCastLength / FLdistance);
+
+            directionChanged = true;
+            alert = true;
+        }
+
+        //Resolving Vertical
+        if ((RCup || RCdown) && !alert)
+        {
+            if (correctedDirection == targetPointDirection)
+                correctedDirection = shark.transform.forward;
+
+            if (Mathf.Abs(Udistance - Ddistance) > 2f)
+            {
+                if (Udistance < Ddistance)
+                    correctedDirection += new Vector3(0, rayCastLength / -Udistance, 0);
+                else if (Ddistance < Udistance)
+                    correctedDirection += new Vector3(0, rayCastLength / Ddistance, 0);
+            }
+
+            directionChanged = true;
+        }
+
+        //Resolving Horizontal
+        if ((RCright || RCleft) && !alert)
+        {
+            if (correctedDirection == targetPointDirection)
+                correctedDirection = shark.transform.forward;
+
+            if (Mathf.Abs(Rdistance - Ldistance) > 2f)
+            {
+                if (Rdistance < Ldistance)
+                    correctedDirection += new Vector3(rayCastLength / -Rdistance, 0, 0);
+                else if (Ldistance < Rdistance)
+                    correctedDirection += new Vector3(rayCastLength / Ldistance, 0, 0);
+
+                if (Rdistance < 0 || Ldistance < 0)
+                    Debug.Log("OOOPS");
+            }
+
+            directionChanged = true;
+        }
+
+        //Applying
+        if (!directionChanged)
+        {
+            if (!playerSpotted)
+                currentDirection = targetPointDirection;
+            else
+                currentDirection = playerDirection;
+
+            if (currentSharkSpeed < maxSharkSpeed)
+                currentSharkSpeed += 0.1f;
+        }
+        else if (directionChanged && correctedDirection != targetPointDirection)
+        {
+            currentDirection = correctedDirection;
+
+            if (!playerSpotted)
+            {
+                if (currentSharkSpeed > maxSharkSpeed / 3)
+                    currentSharkSpeed -= 0.1f;
+                correctedTurnValue = 0.5f;
+            }
+            else
+            {
+                correctedTurnValue = 2f;
+            }
+        }
+    }
+
+    void PlayerDetection()
+    {
+        RaycastHit hit;
+        Vector3 delta = player.transform.position - shark.transform.position;
+        Vector3 pos = shark.transform.position;
+
+        if (Physics.Raycast(pos, delta, out hit, delta.magnitude))
+        {
+            Vector3 hitDelta = player.transform.position - hit.point;
+
+            if (delta.magnitude > 50f && !playerScript.hidden)
+            {
+                Debug.DrawLine(pos, hit.point, Color.red);
+                playerSpotted = false;
+            }
+            else if (delta.magnitude > 15f && playerScript.hidden)
+            {
+                Debug.DrawLine(pos, hit.point, Color.red);
+                playerSpotted = false;
+            }
+            else
+            {
+                if (hitDelta.magnitude > 1f && !playerScript.hidden)
+                {
+                    Debug.DrawLine(pos, hit.point, Color.red);
+                    playerSpotted = false;
+                }
+                else if (hitDelta.magnitude > 1f && playerScript.hidden)
+                {
+                    Debug.DrawLine(pos, hit.point, Color.red);
+                    playerSpotted = false;
+                }
+                else
+                {
+                    Debug.DrawLine(pos, hit.point, Color.green);
+                    playerSpotted = true;
+                }
+            }
+        }
+    }
+}
